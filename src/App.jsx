@@ -935,6 +935,35 @@ function SettingsModal({ reminderEnabled, onEnableReminders, onResetData, onClos
   );
 }
 
+function EmptyState({ onAddLoan, onLoadDemo }) {
+  return (
+    <div className="min-h-[70vh] flex flex-col items-center justify-center text-center">
+      <div className="bg-blue-600 text-white rounded-[2rem] p-6 shadow-xl shadow-blue-200 mb-6">
+        <Landmark size={42} />
+      </div>
+
+      <h2 className="text-3xl font-semibold tracking-tight mb-3">Welcome to DuitLoan</h2>
+      <p className="text-gray-500 max-w-xs mb-6">
+        Track loans, payments and save interest smarter.
+      </p>
+
+      <button
+        onClick={onAddLoan}
+        className="w-full bg-blue-600 text-white rounded-2xl py-4 font-semibold active:scale-[0.98] transition mb-3"
+      >
+        Add First Loan
+      </button>
+
+      <button
+        onClick={onLoadDemo}
+        className="w-full bg-white text-blue-600 rounded-2xl py-4 font-semibold shadow-sm active:scale-[0.98] transition"
+      >
+        Load Demo Data
+      </button>
+    </div>
+  );
+}
+
 function LoanFormModal({ loan, onClose, onSave }) {
   const [form, setForm] = useState({
     name: loan?.name || "",
@@ -1196,6 +1225,10 @@ export default function App() {
     setShowAddLoan(false);
   };
 
+  const handleLoadDemoData = () => {
+    setLoans(initialLoans.map(normalizeLoan));
+  };
+
   const handleUpdateLoan = (updatedLoan) => {
     const normalizedLoan = normalizeLoan(updatedLoan);
 
@@ -1403,6 +1436,10 @@ export default function App() {
           </button>
         </div>
 
+        {loans.length === 0 ? (
+          <EmptyState onAddLoan={() => setShowAddLoan(true)} onLoadDemo={handleLoadDemoData} />
+        ) : (
+          <>
         {(dueSoonCount > 0 || overdueCount > 0) && (
           <div className="bg-white rounded-[1.7rem] p-4 shadow-sm mb-5">
             <div className="grid grid-cols-2 gap-3">
@@ -1550,6 +1587,8 @@ export default function App() {
             </div>
           )}
         </div>
+          </>
+        )}
 
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[340px] bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-2xl px-6 py-4 flex justify-between items-center border border-white">
           <Home className="text-blue-600" />
