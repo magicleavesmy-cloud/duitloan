@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bell, Home, Wallet, FileText, MoreHorizontal, Plus,
   House, Car, CreditCard, User, Landmark, Eye, EyeOff, X, Pencil, Trash2, Search
@@ -285,18 +285,18 @@ function loadLoans() {
     const savedLoans = localStorage.getItem(STORAGE_KEY);
 
     if (!savedLoans) {
-      return initialLoans.map(normalizeLoan);
+      return [];
     }
 
     const parsedLoans = JSON.parse(savedLoans);
 
     if (!Array.isArray(parsedLoans)) {
-      return initialLoans.map(normalizeLoan);
+      return [];
     }
 
     return parsedLoans.map(normalizeLoan);
   } catch {
-    return initialLoans.map(normalizeLoan);
+    return [];
   }
 }
 
@@ -891,7 +891,7 @@ function PaymentModal({ loan, onClose, onSave }) {
   );
 }
 
-function SettingsModal({ reminderEnabled, onEnableReminders, onClose }) {
+function SettingsModal({ reminderEnabled, onEnableReminders, onResetData, onClose }) {
   return (
     <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
       <div className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl">
@@ -919,9 +919,16 @@ function SettingsModal({ reminderEnabled, onEnableReminders, onClose }) {
 
         <button
           onClick={onEnableReminders}
-          className="w-full bg-blue-600 text-white rounded-2xl py-4 font-semibold active:scale-[0.98] transition"
+          className="w-full bg-blue-600 text-white rounded-2xl py-4 font-semibold active:scale-[0.98] transition mb-3"
         >
           Enable Payment Reminders
+        </button>
+
+        <button
+          onClick={onResetData}
+          className="w-full bg-red-50 text-red-600 rounded-2xl py-4 font-semibold active:scale-[0.98] transition"
+        >
+          Reset All Data
         </button>
       </div>
     </div>
@@ -1148,6 +1155,7 @@ function LoanFormModal({ loan, onClose, onSave }) {
 }
 
 export default function App() {
+  const skipNextLoanPersist = useRef(false);
   const [loans, setLoans] = useState(loadLoans);
   const [selectedLoanId, setSelectedLoanId] = useState(null);
   const [showAddLoan, setShowAddLoan] = useState(false);
@@ -1317,7 +1325,34 @@ export default function App() {
     }
   };
 
+  const handleResetData = () => {
+    if (!window.confirm("Reset all DuitLoan data? This cannot be undone.")) {
+      return;
+    }
+
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("duitloan."))
+      .forEach((key) => localStorage.removeItem(key));
+
+    skipNextLoanPersist.current = true;
+    setLoans([]);
+    setSelectedLoanId(null);
+    setShowAddLoan(false);
+    setEditingLoan(null);
+    setCalculatorLoan(null);
+    setPaymentLoan(null);
+    setReminderEnabled(false);
+    setLoanSearch("");
+    setActiveFilter("All");
+    setShowSettings(false);
+  };
+
   useEffect(() => {
+    if (skipNextLoanPersist.current) {
+      skipNextLoanPersist.current = false;
+      return;
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
   }, [loans]);
 
@@ -1726,6 +1761,7 @@ export default function App() {
         <SettingsModal
           reminderEnabled={reminderEnabled}
           onEnableReminders={handleEnableReminders}
+          onResetData={handleResetData}
           onClose={() => setShowSettings(false)}
         />
       )}
