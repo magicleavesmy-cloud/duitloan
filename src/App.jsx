@@ -1394,8 +1394,8 @@ export default function App() {
       <div className="w-full max-w-sm pb-28">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <p className="text-gray-500">Good Morning {"\uD83D\uDC4B"}</p>
-            <h1 className="text-3xl font-semibold tracking-tight">Adam</h1>
+            <p className="text-gray-500">Welcome back</p>
+            <h1 className="text-3xl font-semibold tracking-tight">DuitLoan</h1>
           </div>
 
           <button className="bg-white rounded-2xl p-3 shadow-sm active:scale-95 transition">
