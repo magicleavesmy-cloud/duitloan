@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="DuitLoan icon">
+  <rect width="512" height="512" rx="118" fill="#2563eb"/>
+  <circle cx="390" cy="112" r="64" fill="#ffffff" opacity="0.16"/>
+  <circle cx="96" cy="400" r="92" fill="#ffffff" opacity="0.12"/>
+  <text x="256" y="300" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="154" font-weight="800" fill="#ffffff">DL</text>
+</svg>
