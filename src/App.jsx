@@ -8,6 +8,7 @@ import {
 } from "recharts";
 
 const STORAGE_KEY = "duitloan.loans";
+const SETTINGS_KEY = "duitloan.settings";
 const REMINDER_ENABLED_KEY = "duitloan.reminderEnabled";
 const REMINDER_NOTIFIED_KEY = "duitloan.lastNotified";
 
@@ -302,6 +303,18 @@ function loadLoans() {
 
 function loadReminderEnabled() {
   return localStorage.getItem(REMINDER_ENABLED_KEY) === "true";
+}
+
+function loadSettings() {
+  try {
+    return {
+      displayName: "",
+      currency: "RM",
+      ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"),
+    };
+  } catch {
+    return { displayName: "", currency: "RM" };
+  }
 }
 
 function loadLastNotified() {
@@ -891,7 +904,7 @@ function PaymentModal({ loan, onClose, onSave }) {
   );
 }
 
-function SettingsModal({ reminderEnabled, onEnableReminders, onResetData, onClose }) {
+function SettingsModal({ settings, reminderEnabled, onEnableReminders, onUpdateSettings, onResetData, onClose }) {
   return (
     <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
       <div className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl">
@@ -915,6 +928,29 @@ function SettingsModal({ reminderEnabled, onEnableReminders, onResetData, onClos
           </div>
 
           <div className={`w-3 h-3 rounded-full ${reminderEnabled ? "bg-green-500" : "bg-gray-300"}`} />
+        </div>
+
+        <div className="space-y-3 mb-4">
+          <label className="block">
+            <span className="text-gray-500 text-sm">Display name</span>
+            <input
+              value={settings.displayName}
+              onChange={(event) => onUpdateSettings({ displayName: event.target.value })}
+              className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Optional"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-gray-500 text-sm">Currency</span>
+            <select
+              value={settings.currency}
+              onChange={(event) => onUpdateSettings({ currency: event.target.value })}
+              className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="RM">RM</option>
+            </select>
+          </label>
         </div>
 
         <button
@@ -1019,7 +1055,7 @@ function LoanFormModal({ loan, onClose, onSave }) {
 
   return (
     <div className="modal-backdrop fixed inset-0 z-40 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
-      <form onSubmit={handleSubmit} className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl">
+      <form onSubmit={handleSubmit} className="modal-sheet mt-16 max-h-[calc(100vh-90px)] overflow-y-auto bg-white w-full max-w-sm rounded-[2rem] p-5 pt-6 shadow-2xl">
         <div className="flex justify-between items-center mb-5">
           <div>
             <h2 className="text-2xl font-semibold">{loan ? "Edit Loan" : "Add Loan"}</h2>
@@ -1185,6 +1221,7 @@ function LoanFormModal({ loan, onClose, onSave }) {
 
 export default function App() {
   const skipNextLoanPersist = useRef(false);
+  const skipNextSettingsPersist = useRef(false);
   const [loans, setLoans] = useState(loadLoans);
   const [selectedLoanId, setSelectedLoanId] = useState(null);
   const [showAddLoan, setShowAddLoan] = useState(false);
@@ -1193,6 +1230,7 @@ export default function App() {
   const [paymentLoan, setPaymentLoan] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(loadReminderEnabled);
+  const [settings, setSettings] = useState(loadSettings);
   const [showBalance, setShowBalance] = useState(true);
   const [loanSearch, setLoanSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
@@ -1358,6 +1396,13 @@ export default function App() {
     }
   };
 
+  const handleUpdateSettings = (updates) => {
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      ...updates,
+    }));
+  };
+
   const handleResetData = () => {
     if (!window.confirm("Reset all DuitLoan data? This cannot be undone.")) {
       return;
@@ -1368,6 +1413,7 @@ export default function App() {
       .forEach((key) => localStorage.removeItem(key));
 
     skipNextLoanPersist.current = true;
+    skipNextSettingsPersist.current = true;
     setLoans([]);
     setSelectedLoanId(null);
     setShowAddLoan(false);
@@ -1375,6 +1421,7 @@ export default function App() {
     setCalculatorLoan(null);
     setPaymentLoan(null);
     setReminderEnabled(false);
+    setSettings({ displayName: "", currency: "RM" });
     setLoanSearch("");
     setActiveFilter("All");
     setShowSettings(false);
@@ -1388,6 +1435,15 @@ export default function App() {
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
   }, [loans]);
+
+  useEffect(() => {
+    if (skipNextSettingsPersist.current) {
+      skipNextSettingsPersist.current = false;
+      return;
+    }
+
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }, [settings]);
 
   useEffect(() => {
     if (!reminderEnabled || !("Notification" in window) || Notification.permission !== "granted") {
@@ -1427,8 +1483,12 @@ export default function App() {
       <div className="w-full max-w-sm pb-28">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <p className="text-gray-500">Welcome back</p>
-            <h1 className="text-3xl font-semibold tracking-tight">DuitLoan</h1>
+            <p className="text-gray-500">
+              {settings.displayName.trim() ? `Good Morning, ${settings.displayName.trim()}` : "Welcome back"}
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {settings.displayName.trim() ? "DuitLoan" : "DuitLoan"}
+            </h1>
           </div>
 
           <button className="bg-white rounded-2xl p-3 shadow-sm active:scale-95 transition">
@@ -1798,8 +1858,10 @@ export default function App() {
 
       {showSettings && (
         <SettingsModal
+          settings={settings}
           reminderEnabled={reminderEnabled}
           onEnableReminders={handleEnableReminders}
+          onUpdateSettings={handleUpdateSettings}
           onResetData={handleResetData}
           onClose={() => setShowSettings(false)}
         />
