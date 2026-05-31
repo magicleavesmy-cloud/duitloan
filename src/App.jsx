@@ -656,7 +656,7 @@ function ExtraPaymentModal({ loan, onClose }) {
 
   return (
     <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
-      <div className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl">
+      <div className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 pb-8 shadow-2xl">
         <div className="flex justify-between items-center mb-5">
           <div>
             <h2 className="text-2xl font-semibold">Extra Payment</h2>
@@ -806,7 +806,7 @@ function PaymentModal({ loan, onClose, onSave }) {
 
   return (
     <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
-      <form onSubmit={handleSubmit} className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl">
+      <form onSubmit={handleSubmit} className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 pb-8 shadow-2xl">
         <div className="flex justify-between items-center mb-5">
           <div>
             <h2 className="text-2xl font-semibold">Add Payment</h2>
@@ -959,7 +959,7 @@ function SettingsModal({
 
   return (
     <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
-      <div className="modal-sheet bg-white w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-5 shadow-2xl">
+      <div className="modal-sheet bg-white w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-5 pb-8 shadow-2xl">
         <div className="flex justify-between items-center mb-5">
           <div>
             <h2 className="text-2xl font-semibold">Settings</h2>
@@ -1170,7 +1170,7 @@ function LoanFormModal({ loan, onClose, onSave }) {
 
   return (
     <div className="modal-backdrop fixed inset-0 z-40 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
-      <form onSubmit={handleSubmit} className="modal-sheet mt-16 max-h-[calc(100vh-90px)] overflow-y-auto bg-white w-full max-w-sm rounded-[2rem] p-5 pt-6 shadow-2xl">
+      <form onSubmit={handleSubmit} className="modal-sheet mt-16 max-h-[calc(100vh-90px)] overflow-y-auto bg-white w-full max-w-sm rounded-[2rem] p-5 pt-6 pb-8 shadow-2xl">
         <div className="flex justify-between items-center mb-5">
           <div>
             <h2 className="text-2xl font-semibold">{loan ? "Edit Loan" : "Add Loan"}</h2>
@@ -1875,7 +1875,7 @@ export default function App() {
 
   return (
     <div className={`theme-${settings.theme === "dark" ? "dark" : "light"} min-h-screen bg-[#f5f5f7] flex justify-center px-5 py-6`}>
-      <div className="w-full max-w-sm pb-40">
+      <div className="w-full max-w-sm pb-[calc(11rem+env(safe-area-inset-bottom))]">
         <div className="flex justify-between items-center mb-6">
           <div>
             <p className="text-gray-500">
@@ -1997,7 +1997,7 @@ export default function App() {
           })}
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3 pb-8">
           {filteredLoans.map((loan, index) => {
             const Icon = getLoanIcon(loan.type);
             const progress = getLoanProgress(loan);
@@ -2066,7 +2066,7 @@ export default function App() {
 
       {selectedLoan && (
         <div className="modal-backdrop fixed inset-0 z-40 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
-          <div className="modal-sheet bg-white w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-5 shadow-2xl">
+          <div className="modal-sheet bg-white w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-5 pb-8 shadow-2xl">
             <div className="flex justify-between items-center mb-5">
               <div>
                 <h2 className="text-2xl font-semibold">{selectedLoan.name}</h2>
