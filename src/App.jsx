@@ -12,6 +12,12 @@ const SETTINGS_KEY = "duitloan.settings";
 const REMINDER_ENABLED_KEY = "duitloan.reminderEnabled";
 const REMINDER_NOTIFIED_KEY = "duitloan.lastNotified";
 
+const defaultSettings = {
+  displayName: "",
+  currency: "RM",
+  theme: "light",
+};
+
 const initialLoans = [
   { id: "sample-house", name: "House Loan", bank: "Maybank", amount: 686000, monthly: 4491, paid: 43, type: "House", nextDueDate: "2026-06-01", annualInterestRate: 4.2, originalTenureYears: 35, remainingTenureYears: 22 },
   { id: "sample-car", name: "Car Loan", bank: "Public Bank", amount: 120000, monthly: 1200, paid: 65, type: "Car", nextDueDate: "2026-06-05", annualInterestRate: 3.1, originalTenureYears: 9, remainingTenureYears: 4 },
@@ -308,13 +314,11 @@ function loadReminderEnabled() {
 function loadSettings() {
   try {
     return {
-      displayName: "",
-      currency: "RM",
-      theme: "light",
+      ...defaultSettings,
       ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"),
     };
   } catch {
-    return { displayName: "", currency: "RM", theme: "light" };
+    return defaultSettings;
   }
 }
 
@@ -905,7 +909,38 @@ function PaymentModal({ loan, onClose, onSave }) {
   );
 }
 
-function SettingsModal({ settings, reminderEnabled, onEnableReminders, onUpdateSettings, onResetData, onClose }) {
+function SettingsModal({
+  settings,
+  reminderEnabled,
+  onEnableReminders,
+  onUpdateSettings,
+  onExportData,
+  onImportData,
+  onResetData,
+  onClose,
+}) {
+  const importInputRef = useRef(null);
+
+  const handleImportFile = (event) => {
+    const input = event.currentTarget;
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      onImportData(String(reader.result || ""));
+      input.value = "";
+    };
+    reader.onerror = () => {
+      window.alert("This backup file could not be read.");
+      input.value = "";
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
       <div className="modal-sheet bg-white w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-5 shadow-2xl">
@@ -985,6 +1020,32 @@ function SettingsModal({ settings, reminderEnabled, onEnableReminders, onUpdateS
         >
           Enable Payment Reminders
         </button>
+
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <button
+            type="button"
+            onClick={onExportData}
+            className="bg-gray-100 text-gray-800 rounded-2xl py-4 font-semibold active:scale-[0.98] transition"
+          >
+            Export Data
+          </button>
+
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            className="bg-gray-100 text-gray-800 rounded-2xl py-4 font-semibold active:scale-[0.98] transition"
+          >
+            Import Data
+          </button>
+        </div>
+
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={handleImportFile}
+          className="hidden"
+        />
 
         <button
           onClick={onResetData}
@@ -1429,6 +1490,65 @@ export default function App() {
     }));
   };
 
+  const handleExportData = () => {
+    const backup = {
+      app: "DuitLoan",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      loans,
+      settings,
+      reminderEnabled,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `duitloan-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportData = (backupText) => {
+    try {
+      const backup = JSON.parse(backupText);
+
+      if (!Array.isArray(backup.loans)) {
+        throw new Error("Backup is missing loans.");
+      }
+
+      if (!window.confirm("Import backup data? This will replace your current loans, payments and settings.")) {
+        return;
+      }
+
+      const nextSettings = {
+        ...defaultSettings,
+        ...(backup.settings && typeof backup.settings === "object" && !Array.isArray(backup.settings)
+          ? backup.settings
+          : {}),
+      };
+      const nextReminderEnabled = Boolean(backup.reminderEnabled);
+
+      setLoans(backup.loans.map(normalizeLoan));
+      setSettings(nextSettings);
+      setReminderEnabled(nextReminderEnabled);
+      setSelectedLoanId(null);
+      setShowAddLoan(false);
+      setEditingLoan(null);
+      setCalculatorLoan(null);
+      setPaymentLoan(null);
+      setLoanSearch("");
+      setActiveFilter("All");
+      setShowSettings(false);
+
+      localStorage.setItem(REMINDER_ENABLED_KEY, String(nextReminderEnabled));
+      localStorage.removeItem(REMINDER_NOTIFIED_KEY);
+    } catch {
+      window.alert("This backup file could not be imported.");
+    }
+  };
+
   const handleResetData = () => {
     if (!window.confirm("Reset all DuitLoan data? This cannot be undone.")) {
       return;
@@ -1447,7 +1567,7 @@ export default function App() {
     setCalculatorLoan(null);
     setPaymentLoan(null);
     setReminderEnabled(false);
-    setSettings({ displayName: "", currency: "RM", theme: "light" });
+    setSettings(defaultSettings);
     setLoanSearch("");
     setActiveFilter("All");
     setShowSettings(false);
@@ -1888,6 +2008,8 @@ export default function App() {
           reminderEnabled={reminderEnabled}
           onEnableReminders={handleEnableReminders}
           onUpdateSettings={handleUpdateSettings}
+          onExportData={handleExportData}
+          onImportData={handleImportData}
           onResetData={handleResetData}
           onClose={() => setShowSettings(false)}
         />
