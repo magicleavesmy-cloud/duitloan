@@ -310,10 +310,11 @@ function loadSettings() {
     return {
       displayName: "",
       currency: "RM",
+      theme: "light",
       ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"),
     };
   } catch {
-    return { displayName: "", currency: "RM" };
+    return { displayName: "", currency: "RM", theme: "light" };
   }
 }
 
@@ -907,11 +908,11 @@ function PaymentModal({ loan, onClose, onSave }) {
 function SettingsModal({ settings, reminderEnabled, onEnableReminders, onUpdateSettings, onResetData, onClose }) {
   return (
     <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
-      <div className="modal-sheet bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl">
+      <div className="modal-sheet bg-white w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-5 shadow-2xl">
         <div className="flex justify-between items-center mb-5">
           <div>
             <h2 className="text-2xl font-semibold">Settings</h2>
-            <p className="text-gray-500">Payment reminders</p>
+            <p className="text-gray-500">Personalize DuitLoan</p>
           </div>
 
           <button onClick={onClose} className="bg-gray-100 rounded-full p-2 active:scale-95 transition">
@@ -951,6 +952,31 @@ function SettingsModal({ settings, reminderEnabled, onEnableReminders, onUpdateS
               <option value="RM">RM</option>
             </select>
           </label>
+
+          <div>
+            <span className="text-gray-500 text-sm">Theme</span>
+            <div className="mt-1 grid grid-cols-2 gap-2 rounded-2xl bg-gray-50 p-1">
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ theme: "light" })}
+                className={`rounded-[1rem] py-3 text-sm font-semibold active:scale-[0.98] transition ${
+                  settings.theme === "light"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-500"
+                }`}
+              >
+                Light
+              </button>
+
+              <button
+                type="button"
+                disabled
+                className="rounded-[1rem] py-3 text-sm font-semibold text-gray-400"
+              >
+                Dark soon
+              </button>
+            </div>
+          </div>
         </div>
 
         <button
@@ -1421,7 +1447,7 @@ export default function App() {
     setCalculatorLoan(null);
     setPaymentLoan(null);
     setReminderEnabled(false);
-    setSettings({ displayName: "", currency: "RM" });
+    setSettings({ displayName: "", currency: "RM", theme: "light" });
     setLoanSearch("");
     setActiveFilter("All");
     setShowSettings(false);
