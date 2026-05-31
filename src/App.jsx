@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
+import { deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import {
   Bell, Home, Wallet, FileText, MoreHorizontal, Plus,
   House, Car, CreditCard, User, Landmark, Eye, EyeOff, X, Pencil, Trash2, Search
@@ -6,6 +8,13 @@ import {
 import {
   LineChart, Line, ResponsiveContainer, Tooltip, PieChart, Pie, Cell
 } from "recharts";
+import {
+  auth,
+  firebaseReady,
+  getUserLoansCollection,
+  getUserSettingsDoc,
+  googleProvider,
+} from "./firebase";
 
 const STORAGE_KEY = "duitloan.loans";
 const SETTINGS_KEY = "duitloan.settings";
@@ -936,6 +945,15 @@ function SettingsModal({
   onExportData,
   onImportData,
   onExportPdfReport,
+  cloudUser,
+  cloudSyncStatus,
+  cloudSyncMessage,
+  isCloudSyncing,
+  isCloudRestoring,
+  onSignInWithGoogle,
+  onSignOut,
+  onSyncNow,
+  onRestoreFromCloud,
   onResetData,
   onClose,
 }) {
@@ -984,6 +1002,71 @@ function SettingsModal({
           </div>
 
           <div className={`w-3 h-3 rounded-full ${reminderEnabled ? "bg-green-500" : "bg-gray-300"}`} />
+        </div>
+
+        <div className="bg-gray-50 rounded-[1.7rem] p-4 mb-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="font-semibold">Cloud Sync</p>
+              <p className="text-gray-500 text-sm">{cloudSyncStatus}</p>
+            </div>
+
+            <div className={`w-3 h-3 rounded-full ${cloudUser ? "bg-blue-500" : "bg-gray-300"}`} />
+          </div>
+
+          {cloudUser && (
+            <p className="text-gray-500 text-sm mb-3 truncate">
+              {cloudUser.displayName || cloudUser.email || "Google account"}
+            </p>
+          )}
+
+          {cloudSyncMessage && (
+            <p className={`text-sm mb-3 ${cloudSyncMessage.type === "error" ? "text-red-600" : "text-blue-600"}`}>
+              {cloudSyncMessage.text}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={onSignInWithGoogle}
+              disabled={Boolean(cloudUser)}
+              className="bg-white text-blue-600 rounded-2xl py-3 font-semibold active:scale-[0.98] transition disabled:text-gray-400"
+            >
+              Sign in with Google
+            </button>
+
+            <button
+              type="button"
+              onClick={onSignOut}
+              disabled={!cloudUser}
+              className="bg-white text-gray-800 rounded-2xl py-3 font-semibold active:scale-[0.98] transition disabled:text-gray-400"
+            >
+              Sign out
+            </button>
+          </div>
+
+          {cloudUser && (
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <button
+                type="button"
+                onClick={onSyncNow}
+                disabled={isCloudSyncing || isCloudRestoring}
+                className="bg-blue-600 text-white rounded-2xl py-3 font-semibold active:scale-[0.98] transition disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                {isCloudSyncing ? "Syncing..." : "Sync Now"}
+              </button>
+
+              <button
+                type="button"
+                onClick={onRestoreFromCloud}
+                disabled={isCloudSyncing || isCloudRestoring}
+                className="bg-blue-50 text-blue-600 rounded-2xl py-3 font-semibold active:scale-[0.98] transition disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                {isCloudRestoring ? "Restoring..." : "Restore from Cloud"}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3 mb-4">
@@ -1353,6 +1436,10 @@ export default function App() {
   const [showBalance, setShowBalance] = useState(true);
   const [loanSearch, setLoanSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
+  const [cloudUser, setCloudUser] = useState(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [isCloudRestoring, setIsCloudRestoring] = useState(false);
+  const [cloudSyncMessage, setCloudSyncMessage] = useState(null);
   const selectedLoan = loans.find((loan) => loan.id === selectedLoanId);
   const selectedLoanDueStatus = selectedLoan ? getLoanDueStatus(selectedLoan) : null;
   const totalOutstanding = loans.reduce((total, loan) => total + loan.amount, 0);
@@ -1385,6 +1472,7 @@ export default function App() {
   const hiddenLong = `RM ${"\u2022".repeat(7)}`;
   const hiddenShort = `RM ${"\u2022".repeat(4)}`;
   const hiddenTiny = `RM ${"\u2022".repeat(3)}`;
+  const cloudSyncStatus = cloudUser ? "Synced" : "Local only";
 
   const handleSaveLoan = (loan) => {
     setLoans((currentLoans) => [normalizeLoan(loan), ...currentLoans]);
@@ -1529,6 +1617,143 @@ export default function App() {
       ...currentSettings,
       ...updates,
     }));
+  };
+
+  const handleSignInWithGoogle = async () => {
+    if (!firebaseReady || !auth) {
+      window.alert("Firebase is not configured yet. Add your Vite Firebase env values to enable Cloud Sync.");
+      return;
+    }
+
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch {
+      window.alert("Google sign-in could not be completed.");
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (!auth) {
+      setCloudUser(null);
+      return;
+    }
+
+    try {
+      await signOut(auth);
+    } catch {
+      window.alert("Sign out could not be completed.");
+    }
+  };
+
+  const handleSyncNow = async () => {
+    if (!cloudUser) {
+      setCloudSyncMessage({ type: "error", text: "Sign in before syncing." });
+      return;
+    }
+
+    const loansCollection = getUserLoansCollection(cloudUser.uid);
+    const settingsDoc = getUserSettingsDoc(cloudUser.uid);
+
+    if (!loansCollection || !settingsDoc) {
+      setCloudSyncMessage({ type: "error", text: "Firebase is not configured yet." });
+      return;
+    }
+
+    setIsCloudSyncing(true);
+    setCloudSyncMessage(null);
+
+    try {
+      const existingLoans = await getDocs(loansCollection);
+
+      await Promise.all(existingLoans.docs.map((loanDoc) => deleteDoc(loanDoc.ref)));
+      await Promise.all(loans.map((loan) => (
+        setDoc(doc(loansCollection, loan.id), {
+          ...loan,
+          syncedAt: serverTimestamp(),
+        })
+      )));
+      await setDoc(settingsDoc, {
+        ...settings,
+        reminderEnabled,
+        syncedAt: serverTimestamp(),
+      });
+
+      setCloudSyncMessage({
+        type: "success",
+        text: `Synced ${loans.length} ${loans.length === 1 ? "loan" : "loans"} to Firebase.`,
+      });
+    } catch {
+      setCloudSyncMessage({ type: "error", text: "Sync failed. Please try again." });
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const handleRestoreFromCloud = async () => {
+    if (!cloudUser) {
+      setCloudSyncMessage({ type: "error", text: "Sign in before restoring." });
+      return;
+    }
+
+    if (!window.confirm("Restore from cloud? This will replace your local loans and settings.")) {
+      return;
+    }
+
+    const loansCollection = getUserLoansCollection(cloudUser.uid);
+    const settingsDoc = getUserSettingsDoc(cloudUser.uid);
+
+    if (!loansCollection || !settingsDoc) {
+      setCloudSyncMessage({ type: "error", text: "Firebase is not configured yet." });
+      return;
+    }
+
+    setIsCloudRestoring(true);
+    setCloudSyncMessage(null);
+
+    try {
+      const [loanSnapshot, settingsSnapshot] = await Promise.all([
+        getDocs(loansCollection),
+        getDoc(settingsDoc),
+      ]);
+      const restoredLoans = loanSnapshot.docs.map((loanDoc) => normalizeLoan({
+        id: loanDoc.id,
+        ...loanDoc.data(),
+      }));
+      const cloudSettings = settingsSnapshot.exists() ? settingsSnapshot.data() : {};
+      const nextSettings = {
+        ...defaultSettings,
+        ...(cloudSettings && typeof cloudSettings === "object" && !Array.isArray(cloudSettings)
+          ? cloudSettings
+          : {}),
+      };
+      const nextReminderEnabled = Boolean(cloudSettings?.reminderEnabled);
+
+      delete nextSettings.reminderEnabled;
+      delete nextSettings.syncedAt;
+
+      setLoans(restoredLoans);
+      setSettings(nextSettings);
+      setReminderEnabled(nextReminderEnabled);
+      setSelectedLoanId(null);
+      setShowAddLoan(false);
+      setEditingLoan(null);
+      setCalculatorLoan(null);
+      setPaymentLoan(null);
+      setLoanSearch("");
+      setActiveFilter("All");
+
+      localStorage.setItem(REMINDER_ENABLED_KEY, String(nextReminderEnabled));
+      localStorage.removeItem(REMINDER_NOTIFIED_KEY);
+
+      setCloudSyncMessage({
+        type: "success",
+        text: `Restored ${restoredLoans.length} ${restoredLoans.length === 1 ? "loan" : "loans"} from Firebase.`,
+      });
+    } catch {
+      setCloudSyncMessage({ type: "error", text: "Restore failed. Please try again." });
+    } finally {
+      setIsCloudRestoring(false);
+    }
   };
 
   const handleExportData = () => {
@@ -1842,6 +2067,22 @@ export default function App() {
 
     themeMeta.setAttribute("content", themeColor);
   }, [settings.theme]);
+
+  useEffect(() => {
+    if (!auth) {
+      setCloudUser(null);
+      return undefined;
+    }
+
+    return onAuthStateChanged(auth, (user) => {
+      setCloudUser(user);
+
+      if (user) {
+        getUserLoansCollection(user.uid);
+        getUserSettingsDoc(user.uid);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!reminderEnabled || !("Notification" in window) || Notification.permission !== "granted") {
@@ -2269,6 +2510,15 @@ export default function App() {
           onExportData={handleExportData}
           onImportData={handleImportData}
           onExportPdfReport={handleExportPdfReport}
+          cloudUser={cloudUser}
+          cloudSyncStatus={cloudSyncStatus}
+          cloudSyncMessage={cloudSyncMessage}
+          isCloudSyncing={isCloudSyncing}
+          isCloudRestoring={isCloudRestoring}
+          onSignInWithGoogle={handleSignInWithGoogle}
+          onSignOut={handleSignOut}
+          onSyncNow={handleSyncNow}
+          onRestoreFromCloud={handleRestoreFromCloud}
           onResetData={handleResetData}
           onClose={() => setShowSettings(false)}
         />
