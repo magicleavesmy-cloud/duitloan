@@ -21,6 +21,8 @@ const SETTINGS_KEY = "duitloan.settings";
 const AFFORDABILITY_KEY = "duitloan.affordability";
 const REMINDER_ENABLED_KEY = "duitloan.reminderEnabled";
 const REMINDER_NOTIFIED_KEY = "duitloan.lastNotified";
+const APP_VERSION = "1.0.0 Beta";
+const SUPPORT_EMAIL = "support@duitloan.app";
 
 const defaultSettings = {
   displayName: "",
@@ -1627,6 +1629,9 @@ function SettingsModal({
   onClose,
 }) {
   const importInputRef = useRef(null);
+  const feedbackHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("DuitLoan Feedback")}&body=${encodeURIComponent(
+    `App version: ${APP_VERSION}\nDevice: ${navigator.userAgent}\n\nFeedback:\n`
+  )}`;
 
   const handleImportFile = (event) => {
     const input = event.currentTarget;
@@ -1859,6 +1864,31 @@ function SettingsModal({
         >
           Reset All Data
         </button>
+
+        <div className="bg-gray-50 rounded-[1.7rem] p-4 mt-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <p className="font-semibold">About DuitLoan</p>
+              <p className="text-blue-600 text-sm font-medium">Smart Loan Tracker</p>
+            </div>
+            <p className="text-gray-400 text-xs">{APP_VERSION}</p>
+          </div>
+
+          <p className="text-gray-500 text-sm mb-3">
+            Built for tracking loans, payments, due dates, and payoff progress.
+          </p>
+
+          <p className="text-gray-400 text-xs mb-4">
+            Your data stays on your device unless you enable Cloud Sync.
+          </p>
+
+          <a
+            href={feedbackHref}
+            className="block w-full bg-white text-blue-600 rounded-2xl py-3 text-center font-semibold active:scale-[0.98] transition"
+          >
+            Send Feedback
+          </a>
+        </div>
       </div>
     </div>
   );
