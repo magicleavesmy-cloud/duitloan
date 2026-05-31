@@ -548,12 +548,18 @@ function SmartAnalytics({ loans }) {
         </div>
 
         <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
-          <p className="text-gray-500 text-sm">Total Monthly</p>
+          <div className="flex items-center gap-2 text-gray-500">
+            <Wallet size={15} />
+            <p className="text-sm">Total Monthly</p>
+          </div>
           <h3 className="font-semibold text-lg mt-2">{formatCompactRM(totalMonthly)}</h3>
         </div>
 
         <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
-          <p className="text-gray-500 text-sm">Highest Loan</p>
+          <div className="flex items-center gap-2 text-gray-500">
+            <Landmark size={15} />
+            <p className="text-sm">Highest Loan</p>
+          </div>
           <h3 className="font-semibold text-lg mt-2">{highestLoan ? formatCompactRM(highestLoan.amount) : "RM 0"}</h3>
           <p className="text-gray-500 text-xs mt-1 truncate">{highestLoan?.name || "No loans"}</p>
         </div>
@@ -572,7 +578,7 @@ function SmartAnalytics({ loans }) {
           </div>
         </div>
 
-        <div className="h-44">
+        <div className="h-44 mt-5 mb-2">
           {visibleBreakdown.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -599,9 +605,9 @@ function SmartAnalytics({ loans }) {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-1">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-3">
           {breakdown.map((item) => (
-            <div key={item.name} className="flex items-center gap-2 min-w-0">
+            <div key={item.name} className="bg-gray-50 rounded-full px-3 py-2 flex items-center gap-2 min-w-0">
               <span
                 className="w-2.5 h-2.5 rounded-full shrink-0"
                 style={{ backgroundColor: breakdownColors[item.name] }}
@@ -1363,6 +1369,16 @@ export default function App() {
   const dueStatuses = loans.map((loan) => ({ loanId: loan.id, ...getLoanDueStatus(loan) }));
   const overdueCount = dueStatuses.filter((status) => status.isOverdue).length;
   const dueSoonCount = dueStatuses.filter((status) => status.isDueSoon).length;
+  const dueSoonSummary = dueSoonCount === 0
+    ? "No payments due soon"
+    : dueSoonCount === 1
+      ? "1 payment due soon"
+      : `${dueSoonCount} payments due soon`;
+  const overdueSummary = overdueCount === 0
+    ? "No overdue payments"
+    : overdueCount === 1
+      ? "1 overdue payment"
+      : `${overdueCount} overdue payments`;
   const hiddenLong = `RM ${"\u2022".repeat(7)}`;
   const hiddenShort = `RM ${"\u2022".repeat(4)}`;
   const hiddenTiny = `RM ${"\u2022".repeat(3)}`;
@@ -1859,7 +1875,7 @@ export default function App() {
 
   return (
     <div className={`theme-${settings.theme === "dark" ? "dark" : "light"} min-h-screen bg-[#f5f5f7] flex justify-center px-5 py-6`}>
-      <div className="w-full max-w-sm pb-28">
+      <div className="w-full max-w-sm pb-40">
         <div className="flex justify-between items-center mb-6">
           <div>
             <p className="text-gray-500">
@@ -1885,14 +1901,14 @@ export default function App() {
               <div className="bg-orange-50 rounded-2xl p-4">
                 <p className="text-orange-600 text-sm font-medium">Due Soon</p>
                 <h3 className="font-semibold text-lg mt-1 text-orange-600">
-                  {dueSoonCount} payments due soon
+                  {dueSoonSummary}
                 </h3>
               </div>
 
               <div className="bg-red-50 rounded-2xl p-4">
                 <p className="text-red-600 text-sm font-medium">Overdue</p>
                 <h3 className="font-semibold text-lg mt-1 text-red-600">
-                  {overdueCount} overdue payment
+                  {overdueSummary}
                 </h3>
               </div>
             </div>
@@ -1928,12 +1944,18 @@ export default function App() {
 
         <div className="grid grid-cols-2 gap-4 mb-5">
           <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
-            <p className="text-gray-500 text-sm">Interest Paid</p>
+            <div className="flex items-center gap-2 text-gray-500">
+              <FileText size={15} />
+              <p className="text-sm">Interest Paid</p>
+            </div>
             <h3 className="font-semibold text-lg mt-2">{showBalance ? formatCompactRM(totalInterestPaid) : hiddenTiny}</h3>
           </div>
 
           <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
-            <p className="text-gray-500 text-sm">Interest Saved</p>
+            <div className="flex items-center gap-2 text-gray-500">
+              <Plus size={15} />
+              <p className="text-sm">Interest Saved</p>
+            </div>
             <h3 className="font-semibold text-lg mt-2 text-green-600">{showBalance ? formatCompactRM(totalInterestSaved) : hiddenTiny}</h3>
           </div>
         </div>
@@ -2029,7 +2051,7 @@ export default function App() {
           </>
         )}
 
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[340px] bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-2xl px-6 py-4 flex justify-between items-center border border-white">
+        <div className="bottom-nav fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 w-[340px] max-w-[calc(100vw-2rem)] bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-2xl px-6 py-4 flex justify-between items-center border border-white">
           <Home className="text-blue-600" />
           <Wallet className="text-gray-400" />
           <button onClick={() => setShowAddLoan(true)} className="bg-blue-600 rounded-full p-4 text-white shadow-lg shadow-blue-200 active:scale-95 transition">
