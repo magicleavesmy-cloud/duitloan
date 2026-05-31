@@ -549,15 +549,19 @@ function SmartAnalytics({ loans }) {
 
         <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
           <div className="flex items-center gap-2 text-gray-500">
-            <Wallet size={15} />
+            <span className="metric-icon">
+              <Wallet size={14} />
+            </span>
             <p className="text-sm">Total Monthly</p>
           </div>
           <h3 className="font-semibold text-lg mt-2">{formatCompactRM(totalMonthly)}</h3>
         </div>
 
-        <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
+        <div className="premium-glow bg-white rounded-[1.7rem] p-4 shadow-sm">
           <div className="flex items-center gap-2 text-gray-500">
-            <Landmark size={15} />
+            <span className="metric-icon">
+              <Landmark size={14} />
+            </span>
             <p className="text-sm">Highest Loan</p>
           </div>
           <h3 className="font-semibold text-lg mt-2">{highestLoan ? formatCompactRM(highestLoan.amount) : "RM 0"}</h3>
@@ -1369,11 +1373,10 @@ export default function App() {
   const dueStatuses = loans.map((loan) => ({ loanId: loan.id, ...getLoanDueStatus(loan) }));
   const overdueCount = dueStatuses.filter((status) => status.isOverdue).length;
   const dueSoonCount = dueStatuses.filter((status) => status.isDueSoon).length;
-  const dueSoonSummary = dueSoonCount === 0
-    ? "No payments due soon"
-    : dueSoonCount === 1
-      ? "1 payment due soon"
-      : `${dueSoonCount} payments due soon`;
+  const dueSoonTitle = dueSoonCount === 1 ? "Payment due soon" : "Payments due soon";
+  const dueSoonSummary = dueSoonCount === 1
+    ? "1 upcoming payment"
+    : `${dueSoonCount} upcoming payments`;
   const overdueSummary = overdueCount === 0
     ? "No overdue payments"
     : overdueCount === 1
@@ -1899,7 +1902,7 @@ export default function App() {
           <div className="bg-white rounded-[1.7rem] p-4 shadow-sm mb-5">
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-orange-50 rounded-2xl p-4">
-                <p className="text-orange-600 text-sm font-medium">Due Soon</p>
+                <p className="text-orange-600 text-sm font-medium">{dueSoonTitle}</p>
                 <h3 className="font-semibold text-lg mt-1 text-orange-600">
                   {dueSoonSummary}
                 </h3>

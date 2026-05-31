@@ -171,7 +171,7 @@ body:has(.theme-dark) {
 
 .theme-dark input::placeholder,
 .theme-dark textarea::placeholder {
-  color: #71717a;
+  color: #8b8b95;
 }
 
 .theme-dark option {
@@ -275,6 +275,51 @@ body:has(.theme-dark) {
 
 .theme-dark ::selection {
   background: rgba(96, 165, 250, 0.32);
+}
+
+.metric-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+
+.premium-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.premium-glow::after {
+  position: absolute;
+  inset: -35% -20% auto auto;
+  width: 90px;
+  height: 90px;
+  content: "";
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.12), transparent 68%);
+}
+
+.theme-dark .metric-icon {
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+}
+
+.theme-dark .premium-glow::after {
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.16), transparent 68%);
+}
+
+.theme-dark .bg-white:has(input[placeholder="Search loan or bank"]) {
+  background-color: rgba(45, 45, 52, 0.78);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
+}
+
+.theme-dark .bg-white:has(input[placeholder="Search loan or bank"]) input::placeholder {
+  color: #a1a1aa;
 }
 
 .modal-backdrop {
