@@ -13,8 +13,10 @@ export default defineConfig({
         name: "DuitLoan",
         short_name: "DuitLoan",
         theme_color: "#2563eb",
-        background_color: "#f5f5f7",
+        background_color: "#0b0b0f",
         display: "standalone",
+        start_url: "/",
+        scope: "/",
         icons: [
           {
             src: "/pwa-icon-192.svg",

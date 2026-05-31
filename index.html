@@ -4,10 +4,79 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f5f5f7" />
-    <title>duitloan</title>
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="apple-mobile-web-app-title" content="DuitLoan" />
+    <meta name="application-name" content="DuitLoan" />
+    <link rel="apple-touch-icon" href="/pwa-icon-192.svg" />
+    <title>DuitLoan</title>
+    <style>
+      #brand-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background: #f5f5f7;
+        color: #111827;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        transition: opacity 260ms ease, visibility 260ms ease;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        #brand-splash {
+          background: #0b0b0f;
+          color: #f5f5f7;
+        }
+      }
+
+      #brand-splash.hidden {
+        visibility: hidden;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .brand-splash-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-splash-logo {
+        width: 78px;
+        height: 78px;
+        border-radius: 24px;
+        box-shadow: 0 24px 70px rgba(37, 99, 235, .34);
+        animation: dl-pulse 1.8s ease-in-out infinite;
+      }
+
+      .brand-splash-title {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      @keyframes dl-pulse {
+        0%, 100% {
+          filter: drop-shadow(0 0 0 rgba(37, 99, 235, 0));
+          transform: scale(1);
+        }
+
+        50% {
+          filter: drop-shadow(0 0 18px rgba(37, 99, 235, .42));
+          transform: scale(1.035);
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="brand-splash" aria-label="Loading DuitLoan">
+      <div class="brand-splash-inner">
+        <img class="brand-splash-logo" src="/favicon.svg" alt="DuitLoan DL logo" />
+        <h1 class="brand-splash-title">DuitLoan</h1>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

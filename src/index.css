@@ -322,6 +322,22 @@ body:has(.theme-dark) {
   color: #a1a1aa;
 }
 
+.milestone-badge {
+  animation: badge-soft-pop 360ms ease-out both;
+}
+
+@keyframes badge-soft-pop {
+  from {
+    opacity: 0.72;
+    transform: scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .modal-backdrop {
   animation: backdrop-in 180ms ease-out both;
 }

@@ -18,6 +18,7 @@ import {
 
 const STORAGE_KEY = "duitloan.loans";
 const SETTINGS_KEY = "duitloan.settings";
+const AFFORDABILITY_KEY = "duitloan.affordability";
 const REMINDER_ENABLED_KEY = "duitloan.reminderEnabled";
 const REMINDER_NOTIFIED_KEY = "duitloan.lastNotified";
 
@@ -303,6 +304,11 @@ function normalizeLoan(loan) {
     installmentCredit: Number(loan.installmentCredit) || 0,
     paid: calculatePaidPercent(amount, originalAmount),
     type: loan.type || "House",
+    goals: {
+      targetPayoffDate: loan.goals?.targetPayoffDate || "",
+      monthlyExtraGoal: Number(loan.goals?.monthlyExtraGoal) || 0,
+      principalReductionTarget: Number(loan.goals?.principalReductionTarget) || 0,
+    },
     payments: Array.isArray(loan.payments) ? loan.payments.map(normalizePayment) : [],
   };
 }
@@ -339,6 +345,23 @@ function loadSettings() {
     };
   } catch {
     return defaultSettings;
+  }
+}
+
+function loadAffordabilityInputs() {
+  try {
+    return {
+      monthlyIncome: "",
+      existingCommitments: "",
+      desiredPayment: "",
+      ...JSON.parse(localStorage.getItem(AFFORDABILITY_KEY) || "{}"),
+    };
+  } catch {
+    return {
+      monthlyIncome: "",
+      existingCommitments: "",
+      desiredPayment: "",
+    };
   }
 }
 
@@ -614,7 +637,7 @@ function buildLoanInsights(loan, allLoans = []) {
 
   insights.push({
     label: "Progress",
-    text: `You are ${formatProgress(progress)}% through this loan.`,
+    text: progress <= 5 ? "Loan recently started." : `You are ${formatProgress(progress)}% through this loan.`,
   });
 
   if (highestInterestLoan?.id === loan.id && allLoans.length > 1) {
@@ -640,7 +663,7 @@ function buildLoanInsights(loan, allLoans = []) {
     if (monthsSaved >= 3) {
       insights.push({
         label: "Opportunity",
-        text: `Extra RM500/month could save ${formatMonths(monthsSaved)}.`,
+        text: `Extra RM500/month may shorten payoff by ${formatMonths(monthsSaved)}.`,
       });
     }
   }
@@ -653,6 +676,353 @@ function buildLoanInsights(loan, allLoans = []) {
   }
 
   return insights.slice(0, 3);
+}
+
+function calculateFinancialHealth(loans) {
+  if (!loans.length) {
+    return {
+      score: 0,
+      status: "Needs attention",
+      reason: "Add loans to calculate score.",
+    };
+  }
+
+  const totalDebt = loans.reduce((total, loan) => total + loan.amount, 0);
+  const monthlyCommitment = loans.reduce((total, loan) => total + loan.monthly, 0);
+  const averageProgress = loans.reduce((total, loan) => total + getLoanProgress(loan), 0) / loans.length;
+  const overdueCount = loans.filter((loan) => getLoanDueStatus(loan).isOverdue).length;
+  const extraPrincipalTotal = loans.reduce((total, loan) => total + getLoanExtraPrincipal(loan), 0);
+  const paymentCount = loans.reduce((total, loan) => total + (loan.payments?.length || 0), 0);
+  const commitmentRatio = totalDebt > 0 ? monthlyCommitment / totalDebt : 0;
+  let score = 45;
+
+  score += Math.min(25, averageProgress * 0.25);
+  score += paymentCount > 0 ? 12 : 0;
+  score += extraPrincipalTotal > 0 ? 10 : 0;
+  score += commitmentRatio >= 0.003 && commitmentRatio <= 0.02 ? 8 : -8;
+  score -= overdueCount * 18;
+
+  const normalizedScore = Math.round(Math.min(100, Math.max(0, score)));
+  const status = normalizedScore >= 85
+    ? "Excellent"
+    : normalizedScore >= 70
+      ? "Good"
+      : normalizedScore >= 50
+        ? "Fair"
+        : "Needs attention";
+  const reason = overdueCount > 0
+    ? "Overdue loans need attention"
+    : extraPrincipalTotal > 0
+      ? "Extra payments improving score"
+      : averageProgress >= 40
+        ? "Strong repayment progress"
+        : commitmentRatio > 0.02
+          ? "High commitment load"
+          : "No overdue payments";
+
+  return {
+    score: normalizedScore,
+    status,
+    reason,
+  };
+}
+
+function calculateAffordability(inputs) {
+  const monthlyIncome = Math.max(0, Number(inputs.monthlyIncome) || 0);
+  const existingCommitments = Math.max(0, Number(inputs.existingCommitments) || 0);
+  const desiredPayment = Math.max(0, Number(inputs.desiredPayment) || 0);
+  const totalCommitment = existingCommitments + desiredPayment;
+  const debtRatio = monthlyIncome > 0 ? (totalCommitment / monthlyIncome) * 100 : 0;
+  const disposableIncome = Math.max(0, monthlyIncome - totalCommitment);
+  const status = debtRatio <= 35
+    ? "Safe"
+    : debtRatio <= 50
+      ? "Moderate"
+      : "High risk";
+  const recommendation = !monthlyIncome
+    ? "Enter income to simulate affordability."
+    : status === "Safe"
+      ? "Commitment level looks manageable."
+      : status === "Moderate"
+        ? "Disposable income remains acceptable."
+        : "New loan may strain monthly cash flow.";
+
+  return {
+    debtRatio,
+    disposableIncome,
+    status,
+    recommendation,
+    score: Math.max(0, Math.min(100, Math.round(100 - debtRatio))),
+  };
+}
+
+function AffordabilityPage({ inputs, onUpdate }) {
+  const result = calculateAffordability(inputs);
+  const statusClass = result.status === "Safe"
+    ? "text-green-600"
+    : result.status === "Moderate"
+      ? "text-orange-600"
+      : "text-red-600";
+
+  const updateField = (field, value) => {
+    onUpdate({
+      ...inputs,
+      [field]: value,
+    });
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <p className="text-gray-500">Planning tool</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Affordability</h1>
+        </div>
+
+        <div className="bg-blue-50 text-blue-600 rounded-2xl p-3">
+          <Wallet size={22} />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[1.7rem] p-5 shadow-sm mb-5 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-gray-500 text-sm">Affordability Status</p>
+          <h2 className={`font-semibold text-2xl mt-1 ${statusClass}`}>{result.status}</h2>
+          <p className="text-gray-500 text-sm mt-2">{result.recommendation}</p>
+        </div>
+
+        <div className="text-center shrink-0">
+          <ProgressRing value={result.score} size={82} />
+          <p className="text-blue-600 text-xs font-semibold mt-2">{Math.round(result.debtRatio)}% DSR</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[1.7rem] p-5 shadow-sm mb-5">
+        <div className="space-y-3">
+          <label className="block">
+            <span className="text-gray-500 text-sm">Monthly income</span>
+            <input
+              type="number"
+              min="0"
+              value={inputs.monthlyIncome}
+              onChange={(event) => updateField("monthlyIncome", event.target.value)}
+              className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="8000"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-gray-500 text-sm">Existing commitments</span>
+            <input
+              type="number"
+              min="0"
+              value={inputs.existingCommitments}
+              onChange={(event) => updateField("existingCommitments", event.target.value)}
+              className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="2200"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-gray-500 text-sm">Desired new loan payment</span>
+            <input
+              type="number"
+              min="0"
+              value={inputs.desiredPayment}
+              onChange={(event) => updateField("desiredPayment", event.target.value)}
+              className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="900"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
+          <p className="text-gray-500 text-sm">Debt ratio</p>
+          <h3 className={`font-semibold text-lg mt-2 ${statusClass}`}>{result.debtRatio.toFixed(1)}%</h3>
+        </div>
+
+        <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
+          <p className="text-gray-500 text-sm">Disposable income</p>
+          <h3 className="font-semibold text-lg mt-2">{formatRM(result.disposableIncome)}</h3>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getLoanMilestones(loan) {
+  const progress = getLoanProgress(loan);
+  const hasFirstPayment = (loan.payments || []).length > 0;
+  const milestones = [
+    { label: "First payment", complete: hasFirstPayment, threshold: 0 },
+    { label: "25% paid", complete: progress >= 25, threshold: 25 },
+    { label: "50% paid", complete: progress >= 50, threshold: 50 },
+    { label: "75% paid", complete: progress >= 75, threshold: 75 },
+    { label: "Loan completed", complete: progress >= 100 || loan.amount <= 0, threshold: 100 },
+  ];
+  const nextIncompleteIndex = milestones.findIndex((milestone) => !milestone.complete);
+
+  return milestones.map((milestone, index) => ({
+    ...milestone,
+    state: milestone.complete
+      ? "Completed"
+      : index === nextIncompleteIndex
+        ? "In progress"
+        : "Upcoming",
+  }));
+}
+
+function getGoalsSummary(loans) {
+  const loansWithGoals = loans.filter((loan) => (
+    loan.goals?.targetPayoffDate
+    || loan.goals?.monthlyExtraGoal > 0
+    || loan.goals?.principalReductionTarget > 0
+  ));
+  const nextMilestone = loans
+    .map((loan) => ({
+      loan,
+      milestone: getLoanMilestones(loan).find((item) => item.state === "In progress"),
+    }))
+    .find((item) => item.milestone);
+
+  return {
+    activeGoals: loansWithGoals.length,
+    nextMilestone: nextMilestone ? `${nextMilestone.milestone.label} · ${nextMilestone.loan.name}` : "No milestone yet",
+  };
+}
+
+function GoalsSummaryCard({ summary }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 mb-5">
+      <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
+        <p className="text-gray-500 text-sm">Active Goals</p>
+        <h3 className="font-semibold text-lg mt-2">{summary.activeGoals}</h3>
+      </div>
+
+      <div className="premium-glow bg-white rounded-[1.7rem] p-4 shadow-sm">
+        <p className="text-gray-500 text-sm">Next Milestone</p>
+        <h3 className="font-semibold text-sm mt-2 leading-snug">{summary.nextMilestone}</h3>
+      </div>
+    </div>
+  );
+}
+
+function LoanGoalsSection({ loan, onSave }) {
+  const [goals, setGoals] = useState({
+    targetPayoffDate: loan.goals?.targetPayoffDate || "",
+    monthlyExtraGoal: loan.goals?.monthlyExtraGoal || "",
+    principalReductionTarget: loan.goals?.principalReductionTarget || "",
+  });
+  const milestones = getLoanMilestones(loan);
+
+  const updateGoal = (field, value) => {
+    setGoals((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSave = () => {
+    onSave(loan.id, {
+      targetPayoffDate: goals.targetPayoffDate,
+      monthlyExtraGoal: Math.max(0, Number(goals.monthlyExtraGoal) || 0),
+      principalReductionTarget: Math.max(0, Number(goals.principalReductionTarget) || 0),
+    });
+  };
+
+  return (
+    <div className="mb-5">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="font-semibold">Goals</h3>
+        <p className="text-gray-400 text-xs">Milestones</p>
+      </div>
+
+      <div className="bg-white rounded-[1.7rem] p-4 shadow-sm mb-3">
+        <div className="space-y-3">
+          <label className="block">
+            <span className="text-gray-500 text-sm">Target payoff date</span>
+            <input
+              type="date"
+              value={goals.targetPayoffDate}
+              onChange={(event) => updateGoal("targetPayoffDate", event.target.value)}
+              className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-gray-500 text-sm">Extra goal</span>
+              <input
+                type="number"
+                min="0"
+                value={goals.monthlyExtraGoal}
+                onChange={(event) => updateGoal("monthlyExtraGoal", event.target.value)}
+                className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-gray-500 text-sm">Principal target</span>
+              <input
+                type="number"
+                min="0"
+                value={goals.principalReductionTarget}
+                onChange={(event) => updateGoal("principalReductionTarget", event.target.value)}
+                className="mt-1 w-full bg-gray-50 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="10000"
+              />
+            </label>
+          </div>
+        </div>
+
+        <button
+          onClick={handleSave}
+          className="mt-4 w-full bg-blue-600 text-white rounded-2xl py-3 font-semibold active:scale-[0.98] transition"
+        >
+          Save Goals
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {milestones.map((milestone) => (
+          <div key={milestone.label} className="bg-gray-50 rounded-2xl p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`milestone-badge w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${
+                milestone.state === "Completed"
+                  ? "bg-blue-600 text-white"
+                  : milestone.state === "In progress"
+                    ? "bg-blue-50 text-blue-600"
+                    : "bg-white text-gray-400"
+              }`}>
+                {milestone.complete ? "✓" : milestone.threshold || "1"}
+              </div>
+              <div>
+                <p className="font-semibold text-sm">{milestone.label}</p>
+                <p className="text-gray-500 text-xs">{milestone.state}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HealthScoreCard({ health }) {
+  return (
+    <div className="bg-white rounded-[1.7rem] p-5 shadow-sm mb-5 flex items-center justify-between gap-4">
+      <div>
+        <p className="text-gray-500 text-sm">Financial Health</p>
+        <h2 className="font-semibold text-2xl mt-1">{health.status}</h2>
+        <p className="text-gray-500 text-sm mt-2">{health.reason}</p>
+      </div>
+
+      <div className="text-center shrink-0">
+        <ProgressRing value={health.score} size={82} />
+        <p className="text-blue-600 text-xs font-semibold mt-2">{health.score}/100</p>
+      </div>
+    </div>
+  );
 }
 
 function SmartInsights({ insights }) {
@@ -1757,9 +2127,11 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(loadReminderEnabled);
   const [settings, setSettings] = useState(loadSettings);
+  const [affordabilityInputs, setAffordabilityInputs] = useState(loadAffordabilityInputs);
   const [showBalance, setShowBalance] = useState(true);
   const [loanSearch, setLoanSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
+  const [activeView, setActiveView] = useState("dashboard");
   const [cloudUser, setCloudUser] = useState(null);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [isCloudRestoring, setIsCloudRestoring] = useState(false);
@@ -1786,6 +2158,8 @@ export default function App() {
   const overdueCount = dueStatuses.filter((status) => status.isOverdue).length;
   const dueSoonCount = dueStatuses.filter((status) => status.isDueSoon).length;
   const dashboardInsights = loans.flatMap((loan) => buildLoanInsights(loan, loans)).slice(0, 3);
+  const financialHealth = calculateFinancialHealth(loans);
+  const goalsSummary = getGoalsSummary(loans);
   const dueSoonTitle = dueSoonCount === 1 ? "Payment due soon" : "Payments due soon";
   const dueSoonSummary = dueSoonCount === 1
     ? "1 upcoming payment"
@@ -1814,6 +2188,10 @@ export default function App() {
       : cloudSyncState === "error"
         ? "Sync error"
         : "Synced";
+
+  useEffect(() => {
+    document.getElementById("brand-splash")?.classList.add("hidden");
+  }, []);
 
   const handleSaveLoan = (loan) => {
     setLoans((currentLoans) => [normalizeLoan(loan), ...currentLoans]);
@@ -1894,6 +2272,19 @@ export default function App() {
     setPaymentLoan(null);
   };
 
+  const handleSaveLoanGoals = (loanId, goals) => {
+    setLoans((currentLoans) => (
+      currentLoans.map((loan) => (
+        loan.id === loanId
+          ? {
+            ...loan,
+            goals,
+          }
+          : loan
+      ))
+    ));
+  };
+
   const handleDeletePayment = (loanId, payment) => {
     if (!window.confirm(`Delete payment from ${payment.date}?`)) {
       return;
@@ -1958,6 +2349,10 @@ export default function App() {
       ...currentSettings,
       ...updates,
     }));
+  };
+
+  const handleUpdateAffordability = (nextInputs) => {
+    setAffordabilityInputs(nextInputs);
   };
 
   const handleSignInWithGoogle = async () => {
@@ -2445,6 +2840,10 @@ export default function App() {
   }, [settings]);
 
   useEffect(() => {
+    localStorage.setItem(AFFORDABILITY_KEY, JSON.stringify(affordabilityInputs));
+  }, [affordabilityInputs]);
+
+  useEffect(() => {
     const theme = settings.theme === "dark" ? "dark" : "light";
     const themeColor = theme === "dark" ? "#0b0b0f" : "#f5f5f7";
     let themeMeta = document.querySelector('meta[name="theme-color"]');
@@ -2565,7 +2964,9 @@ export default function App() {
           </button>
         </div>
 
-        {loans.length === 0 ? (
+        {activeView === "affordability" ? (
+          <AffordabilityPage inputs={affordabilityInputs} onUpdate={handleUpdateAffordability} />
+        ) : loans.length === 0 ? (
           <EmptyState onAddLoan={() => setShowAddLoan(true)} onLoadDemo={handleLoadDemoData} />
         ) : (
           <>
@@ -2615,6 +3016,10 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        <HealthScoreCard health={financialHealth} />
+
+        <GoalsSummaryCard summary={goalsSummary} />
 
         <div className="grid grid-cols-2 gap-4 mb-5">
           <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
@@ -2728,9 +3133,13 @@ export default function App() {
         )}
 
         <div className="bottom-nav fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 w-[340px] max-w-[calc(100vw-2rem)] bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-2xl px-6 py-4 flex justify-between items-center border border-white">
-          <Home className="text-blue-600" />
-          <Wallet className="text-gray-400" />
-          <button onClick={() => setShowAddLoan(true)} className="bg-blue-600 rounded-full p-4 text-white shadow-lg shadow-blue-200 active:scale-95 transition">
+          <button onClick={() => setActiveView("dashboard")} className="active:scale-95 transition">
+            <Home className={activeView === "dashboard" ? "text-blue-600" : "text-gray-400"} />
+          </button>
+          <button onClick={() => setActiveView("affordability")} className="active:scale-95 transition">
+            <Wallet className={activeView === "affordability" ? "text-blue-600" : "text-gray-400"} />
+          </button>
+          <button onClick={() => { setActiveView("dashboard"); setShowAddLoan(true); }} className="bg-blue-600 rounded-full p-4 text-white shadow-lg shadow-blue-200 active:scale-95 transition">
             <Plus size={24} />
           </button>
           <FileText className="text-gray-400" />
@@ -2799,6 +3208,8 @@ export default function App() {
             </div>
 
             <SmartInsights insights={buildLoanInsights(selectedLoan, loans)} />
+
+            <LoanGoalsSection loan={selectedLoan} onSave={handleSaveLoanGoals} />
 
             {selectedLoan.repaymentType === "flexi" && (
               <button

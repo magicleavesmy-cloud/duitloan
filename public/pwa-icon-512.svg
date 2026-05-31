@@ -1,6 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="DuitLoan icon">
-  <rect width="512" height="512" rx="118" fill="#2563eb"/>
-  <circle cx="390" cy="112" r="64" fill="#ffffff" opacity="0.16"/>
-  <circle cx="96" cy="400" r="92" fill="#ffffff" opacity="0.12"/>
-  <text x="256" y="300" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="154" font-weight="800" fill="#ffffff">DL</text>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="128" fill="#2563EB"/>
+  <rect x="42" y="42" width="428" height="428" rx="108" fill="url(#glow)" fill-opacity=".32"/>
+  <path d="M144 154.7H244C311.2 154.7 360 195.5 360 256C360 316.5 311.2 357.3 244 357.3H144V154.7ZM201.6 205.1V306.9H241.6C277.6 306.9 301.6 287.5 301.6 256C301.6 224.5 277.6 205.1 241.6 205.1H201.6Z" fill="white"/>
+  <path d="M364 154.7H420V357.3H364V154.7Z" fill="white" fill-opacity=".88"/>
+  <defs>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(160 80) rotate(49.4) scale(464.8)">
+      <stop stop-color="white"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
 </svg>
