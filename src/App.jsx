@@ -110,6 +110,15 @@ function formatFullDueDate(dateString) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -916,6 +925,7 @@ function SettingsModal({
   onUpdateSettings,
   onExportData,
   onImportData,
+  onExportPdfReport,
   onResetData,
   onClose,
 }) {
@@ -1005,10 +1015,14 @@ function SettingsModal({
 
               <button
                 type="button"
-                disabled
-                className="rounded-[1rem] py-3 text-sm font-semibold text-gray-400"
+                onClick={() => onUpdateSettings({ theme: "dark" })}
+                className={`rounded-[1rem] py-3 text-sm font-semibold active:scale-[0.98] transition ${
+                  settings.theme === "dark"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-500"
+                }`}
               >
-                Dark soon
+                Dark
               </button>
             </div>
           </div>
@@ -1019,6 +1033,14 @@ function SettingsModal({
           className="w-full bg-blue-600 text-white rounded-2xl py-4 font-semibold active:scale-[0.98] transition mb-3"
         >
           Enable Payment Reminders
+        </button>
+
+        <button
+          type="button"
+          onClick={onExportPdfReport}
+          className="w-full bg-blue-50 text-blue-600 rounded-2xl py-4 font-semibold active:scale-[0.98] transition mb-3"
+        >
+          Export PDF Report
         </button>
 
         <div className="grid grid-cols-2 gap-3 mb-3">
@@ -1549,6 +1571,200 @@ export default function App() {
     }
   };
 
+  const handleExportPdfReport = () => {
+    const generatedAt = new Date().toLocaleString("en-MY", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const loanRows = loans.map((loan) => {
+      const progress = getLoanProgress(loan);
+      const dueStatus = getLoanDueStatus(loan);
+      const dueText = dueStatus.isOverdue
+        ? `Overdue by ${dueStatus.overdueDays} days`
+        : formatFullDueDate(toDateInputValue(dueStatus.date));
+
+      return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(loan.name)}</strong>
+            <span>${escapeHtml(loan.bank)} · ${escapeHtml(loan.type)}</span>
+          </td>
+          <td>${escapeHtml(formatRM(loan.amount))}</td>
+          <td>${escapeHtml(formatRM(loan.monthly))}</td>
+          <td>${escapeHtml(formatProgress(progress))}%</td>
+          <td>${escapeHtml(dueText)}</td>
+        </tr>
+      `;
+    }).join("");
+    const paymentRows = loans.flatMap((loan) => (
+      (loan.payments || []).map((payment) => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(loan.name)}</strong>
+            <span>${escapeHtml(payment.notes || "No notes")}</span>
+          </td>
+          <td>${escapeHtml(payment.date)}</td>
+          <td>${escapeHtml(formatRM(payment.amount))}</td>
+          <td>${escapeHtml(formatRM(payment.interestPortion))}</td>
+          <td>${escapeHtml(formatRM(payment.principalPortion))}</td>
+        </tr>
+      `)
+    )).join("");
+    const reportWindow = window.open("", "_blank", "noopener,noreferrer");
+
+    if (!reportWindow) {
+      window.alert("Please allow pop-ups to export the PDF report.");
+      return;
+    }
+
+    reportWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>DuitLoan Report</title>
+          <style>
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              background: #f5f5f7;
+              color: #111827;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            }
+            main {
+              width: min(920px, calc(100% - 32px));
+              margin: 32px auto;
+              background: #ffffff;
+              border-radius: 28px;
+              padding: 32px;
+            }
+            header {
+              display: flex;
+              justify-content: space-between;
+              gap: 24px;
+              margin-bottom: 28px;
+            }
+            h1, h2, p { margin: 0; }
+            h1 { font-size: 32px; letter-spacing: 0; }
+            h2 { font-size: 18px; margin: 28px 0 12px; }
+            .muted { color: #6b7280; }
+            .summary {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 12px;
+            }
+            .metric {
+              background: #f9fafb;
+              border-radius: 18px;
+              padding: 16px;
+            }
+            .metric p { color: #6b7280; font-size: 12px; }
+            .metric strong { display: block; margin-top: 8px; font-size: 16px; }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              overflow: hidden;
+              border-radius: 18px;
+            }
+            th {
+              background: #f9fafb;
+              color: #6b7280;
+              font-size: 12px;
+              font-weight: 600;
+              text-align: left;
+              padding: 12px;
+            }
+            td {
+              border-top: 1px solid #eef0f3;
+              padding: 12px;
+              font-size: 13px;
+              vertical-align: top;
+            }
+            td span {
+              display: block;
+              color: #6b7280;
+              font-size: 12px;
+              margin-top: 2px;
+            }
+            .empty {
+              background: #f9fafb;
+              border-radius: 18px;
+              color: #6b7280;
+              padding: 18px;
+            }
+            @media print {
+              body { background: #ffffff; }
+              main {
+                width: 100%;
+                margin: 0;
+                border-radius: 0;
+                padding: 0;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <main>
+            <header>
+              <div>
+                <p class="muted">DuitLoan</p>
+                <h1>Loan Summary Report</h1>
+              </div>
+              <p class="muted">${escapeHtml(generatedAt)}</p>
+            </header>
+
+            <section class="summary">
+              <div class="metric"><p>Total outstanding</p><strong>${escapeHtml(formatRM(totalOutstanding))}</strong></div>
+              <div class="metric"><p>Monthly commitment</p><strong>${escapeHtml(formatRM(monthlyCommitment))}</strong></div>
+              <div class="metric"><p>Interest paid</p><strong>${escapeHtml(formatRM(totalInterestPaid))}</strong></div>
+              <div class="metric"><p>Interest saved</p><strong>${escapeHtml(formatRM(totalInterestSaved))}</strong></div>
+            </section>
+
+            <h2>Loan List</h2>
+            ${loans.length ? `
+              <table>
+                <thead>
+                  <tr>
+                    <th>Loan</th>
+                    <th>Outstanding</th>
+                    <th>Monthly</th>
+                    <th>Paid</th>
+                    <th>Next due</th>
+                  </tr>
+                </thead>
+                <tbody>${loanRows}</tbody>
+              </table>
+            ` : '<div class="empty">No loans recorded.</div>'}
+
+            <h2>Payment History Summary</h2>
+            ${paymentRows ? `
+              <table>
+                <thead>
+                  <tr>
+                    <th>Loan</th>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Interest</th>
+                    <th>Principal</th>
+                  </tr>
+                </thead>
+                <tbody>${paymentRows}</tbody>
+              </table>
+            ` : '<div class="empty">No payments recorded.</div>'}
+          </main>
+          <script>
+            window.onload = () => {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    reportWindow.document.close();
+  };
+
   const handleResetData = () => {
     if (!window.confirm("Reset all DuitLoan data? This cannot be undone.")) {
       return;
@@ -1592,6 +1808,23 @@ export default function App() {
   }, [settings]);
 
   useEffect(() => {
+    const theme = settings.theme === "dark" ? "dark" : "light";
+    const themeColor = theme === "dark" ? "#0b0b0f" : "#f5f5f7";
+    let themeMeta = document.querySelector('meta[name="theme-color"]');
+
+    document.documentElement.dataset.theme = theme;
+    document.body.style.backgroundColor = themeColor;
+
+    if (!themeMeta) {
+      themeMeta = document.createElement("meta");
+      themeMeta.setAttribute("name", "theme-color");
+      document.head.appendChild(themeMeta);
+    }
+
+    themeMeta.setAttribute("content", themeColor);
+  }, [settings.theme]);
+
+  useEffect(() => {
     if (!reminderEnabled || !("Notification" in window) || Notification.permission !== "granted") {
       return;
     }
@@ -1625,7 +1858,7 @@ export default function App() {
   }, [loans, reminderEnabled]);
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] flex justify-center px-5 py-6">
+    <div className={`theme-${settings.theme === "dark" ? "dark" : "light"} min-h-screen bg-[#f5f5f7] flex justify-center px-5 py-6`}>
       <div className="w-full max-w-sm pb-28">
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -2010,6 +2243,7 @@ export default function App() {
           onUpdateSettings={handleUpdateSettings}
           onExportData={handleExportData}
           onImportData={handleImportData}
+          onExportPdfReport={handleExportPdfReport}
           onResetData={handleResetData}
           onClose={() => setShowSettings(false)}
         />
