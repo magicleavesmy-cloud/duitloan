@@ -3,7 +3,7 @@ import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import {
   Bell, Home, Wallet, FileText, MoreHorizontal, Plus,
-  House, Car, CreditCard, User, Landmark, Eye, EyeOff, X, Pencil, Trash2, Search
+  House, Car, CreditCard, User, Landmark, Eye, EyeOff, X, Pencil, Trash2, Search, TrendingUp
 } from "lucide-react";
 import {
   LineChart, Line, ResponsiveContainer, Tooltip, PieChart, Pie, Cell
@@ -25,6 +25,8 @@ const defaultSettings = {
   displayName: "",
   currency: "RM",
   theme: "light",
+  autoSyncEnabled: false,
+  lastSyncedAt: "",
 };
 
 const initialLoans = [
@@ -499,6 +501,189 @@ function calculateLoanInterestSaved(loan) {
   return Math.max(0, normalPayoff.interest - reducedPayoff.interest);
 }
 
+function calculateForecastTimeline(loan) {
+  const balance = Math.max(0, Number(loan.amount) || 0);
+  const monthlyPayment = Math.max(0, Number(loan.monthly) || 0);
+  const annualRate = loan.annualInterestRate === "" || loan.annualInterestRate === undefined
+    ? null
+    : Math.max(0, Number(loan.annualInterestRate) || 0);
+  const remainingMonthsLimit = loan.remainingTenureYears
+    ? Math.max(1, Math.round(Number(loan.remainingTenureYears) * 12))
+    : 2400;
+  const hasInterestRate = annualRate !== null;
+  const hasTenure = Boolean(loan.remainingTenureYears);
+  const monthlyRate = hasInterestRate ? annualRate / 100 / 12 : 0;
+  const paymentTooLow = hasInterestRate && monthlyRate > 0 && monthlyPayment <= balance * monthlyRate;
+  const extraPrincipalPaid = (loan.payments || []).reduce((total, payment) => (
+    payment.paymentType === "extra-principal" || payment.extraPayment > 0
+      ? total + (payment.extraPayment || payment.amount || 0)
+      : total
+  ), 0);
+  const baselineBalance = balance + extraPrincipalPaid;
+  const baseline = hasInterestRate && monthlyPayment > 0
+    ? calculatePayoff(baselineBalance, monthlyPayment, annualRate, remainingMonthsLimit)
+    : { months: 0, interest: 0, paymentTooLow: false };
+  const accelerated = hasInterestRate && monthlyPayment > 0
+    ? calculatePayoff(balance, monthlyPayment, annualRate, remainingMonthsLimit)
+    : { months: 0, interest: 0, paymentTooLow: false };
+  const targetMonths = accelerated.months || remainingMonthsLimit;
+  const chartDataPoints = [];
+  const timelineTargets = [
+    { key: "today", label: "Today", ratio: 0 },
+    { key: "25", label: "25% paid", ratio: 0.25 },
+    { key: "50", label: "50% paid", ratio: 0.5 },
+    { key: "75", label: "75% paid", ratio: 0.75 },
+    { key: "paid", label: "Loan fully paid", ratio: 1 },
+  ];
+  const timeline = timelineTargets.map((target) => ({
+    ...target,
+    month: Math.round(target.ratio * targetMonths),
+    date: addMonths(toDateInputValue(new Date()), Math.round(target.ratio * targetMonths)),
+  }));
+  let projectedBalance = balance;
+  let projectedInterest = 0;
+
+  if (hasInterestRate && monthlyPayment > 0 && !paymentTooLow) {
+    const step = Math.max(1, Math.ceil(Math.max(1, targetMonths) / 8));
+
+    chartDataPoints.push({ month: "Now", balance });
+
+    for (let month = 1; month <= targetMonths; month += 1) {
+      const interest = projectedBalance * monthlyRate;
+      const principal = Math.min(projectedBalance, monthlyPayment - interest);
+      projectedInterest += Math.max(0, interest);
+      projectedBalance = Math.max(0, projectedBalance - principal);
+
+      if (month % step === 0 || projectedBalance <= 0 || month === targetMonths) {
+        chartDataPoints.push({
+          month: `${month}m`,
+          balance: Math.round(projectedBalance),
+        });
+      }
+
+      if (projectedBalance <= 0) {
+        break;
+      }
+    }
+  }
+
+  return {
+    payoffDate: targetMonths ? addMonths(toDateInputValue(new Date()), targetMonths) : "",
+    remainingMonths: targetMonths,
+    remainingLabel: formatMonths(targetMonths),
+    estimatedInterest: accelerated.interest || projectedInterest,
+    monthsSaved: Math.max(0, (baseline.months || 0) - (accelerated.months || 0)),
+    interestSaved: Math.max(0, (baseline.interest || 0) - (accelerated.interest || 0)),
+    extraPrincipalPaid,
+    hasInterestRate,
+    hasTenure,
+    paymentTooLow: paymentTooLow || accelerated.paymentTooLow,
+    timeline,
+    chartData: chartDataPoints,
+  };
+}
+
+function getLoanExtraPrincipal(loan) {
+  return (loan.payments || []).reduce((total, payment) => (
+    payment.paymentType === "extra-principal" || payment.extraPayment > 0
+      ? total + (payment.extraPayment || payment.amount || 0)
+      : total
+  ), 0);
+}
+
+function buildLoanInsights(loan, allLoans = []) {
+  const insights = [];
+  const progress = getLoanProgress(loan);
+  const annualRate = loan.annualInterestRate === "" || loan.annualInterestRate === undefined
+    ? null
+    : Number(loan.annualInterestRate) || 0;
+  const monthlyInterest = annualRate !== null ? loan.amount * (Math.max(0, annualRate) / 100 / 12) : 0;
+  const extraPrincipalPaid = getLoanExtraPrincipal(loan);
+  const highestInterestLoan = allLoans.reduce((highest, currentLoan) => {
+    const currentRate = currentLoan.annualInterestRate === "" || currentLoan.annualInterestRate === undefined
+      ? 0
+      : Number(currentLoan.annualInterestRate) || 0;
+    const currentBurden = currentLoan.amount * currentRate;
+    const highestRate = highest?.annualInterestRate === "" || highest?.annualInterestRate === undefined
+      ? 0
+      : Number(highest?.annualInterestRate) || 0;
+    const highestBurden = highest ? highest.amount * highestRate : 0;
+
+    return currentBurden > highestBurden ? currentLoan : highest;
+  }, null);
+
+  insights.push({
+    label: "Progress",
+    text: `You are ${formatProgress(progress)}% through this loan.`,
+  });
+
+  if (highestInterestLoan?.id === loan.id && allLoans.length > 1) {
+    insights.push({
+      label: "Priority",
+      text: "This loan has the highest interest burden.",
+    });
+  }
+
+  if (annualRate !== null && loan.monthly <= monthlyInterest * 1.15 && loan.amount > 0) {
+    insights.push({
+      label: "Payoff",
+      text: "Payment may be too low for faster payoff.",
+    });
+  }
+
+  if (annualRate !== null && loan.monthly > 0 && loan.remainingTenureYears) {
+    const remainingMonths = Math.round(Number(loan.remainingTenureYears) * 12);
+    const normal = calculatePayoff(loan.amount, loan.monthly, annualRate, remainingMonths);
+    const boosted = calculatePayoff(loan.amount, loan.monthly + 500, annualRate, remainingMonths);
+    const monthsSaved = Math.max(0, normal.months - boosted.months);
+
+    if (monthsSaved >= 3) {
+      insights.push({
+        label: "Opportunity",
+        text: `Extra RM500/month could save ${formatMonths(monthsSaved)}.`,
+      });
+    }
+  }
+
+  if (extraPrincipalPaid > 0) {
+    insights.push({
+      label: "Momentum",
+      text: "Recent extra payments improved payoff timeline.",
+    });
+  }
+
+  return insights.slice(0, 3);
+}
+
+function SmartInsights({ insights }) {
+  if (!insights.length) {
+    return null;
+  }
+
+  return (
+    <div className="mb-5">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="font-semibold">Smart Insights</h3>
+        <p className="text-gray-400 text-xs">{insights.length} notes</p>
+      </div>
+
+      <div className="space-y-2">
+        {insights.map((insight) => (
+          <div key={`${insight.label}-${insight.text}`} className="bg-white rounded-2xl p-4 shadow-sm flex gap-3">
+            <div className="metric-icon shrink-0">
+              <TrendingUp size={14} />
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs font-medium">{insight.label}</p>
+              <p className="font-semibold text-sm mt-1">{insight.text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProgressRing({ value, size = 56 }) {
   const radius = size / 2 - 5;
   const circumference = 2 * Math.PI * radius;
@@ -790,6 +975,117 @@ function ExtraPaymentModal({ loan, onClose }) {
   );
 }
 
+function ForecastTimelineModal({ loan, onClose }) {
+  const forecast = calculateForecastTimeline(loan);
+  const warnings = [
+    !forecast.hasInterestRate ? "Interest rate missing. Edit loan to improve the forecast." : "",
+    !forecast.hasTenure ? "Tenure missing. Forecast uses a long fallback horizon." : "",
+    forecast.paymentTooLow ? "Monthly payment is too low to cover the estimated monthly interest." : "",
+  ].filter(Boolean);
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end justify-center px-4 pb-4">
+      <div className="modal-sheet bg-white w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-5 pb-8 shadow-2xl">
+        <div className="flex justify-between items-center mb-5">
+          <div>
+            <h2 className="text-2xl font-semibold">Forecast Timeline</h2>
+            <p className="text-gray-500">{loan.name}</p>
+          </div>
+
+          <button onClick={onClose} className="bg-gray-100 rounded-full p-2 active:scale-95 transition">
+            <X size={20} />
+          </button>
+        </div>
+
+        {warnings.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {warnings.map((warning) => (
+              <div key={warning} className="bg-orange-50 text-orange-600 rounded-2xl p-4 text-sm font-medium">
+                {warning}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="bg-blue-50 rounded-[1.7rem] p-5 mb-4">
+          <p className="text-gray-500 text-sm">Estimated payoff date</p>
+          <h3 className="text-2xl font-bold mt-1">
+            {forecast.payoffDate ? formatFullDueDate(forecast.payoffDate) : "Unavailable"}
+          </h3>
+          <p className="text-blue-600 text-sm font-medium mt-2">
+            {forecast.remainingMonths} months · {forecast.remainingLabel}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className="bg-gray-50 rounded-2xl p-4">
+            <p className="text-gray-500 text-sm">Interest from today</p>
+            <h3 className="font-semibold">{formatRM(forecast.estimatedInterest)}</h3>
+          </div>
+
+          <div className="bg-gray-50 rounded-2xl p-4">
+            <p className="text-gray-500 text-sm">Time saved</p>
+            <h3 className="font-semibold text-green-600">{formatMonths(forecast.monthsSaved)}</h3>
+          </div>
+
+          <div className="bg-gray-50 rounded-2xl p-4">
+            <p className="text-gray-500 text-sm">Extra principal</p>
+            <h3 className="font-semibold">{formatRM(forecast.extraPrincipalPaid)}</h3>
+          </div>
+
+          <div className="bg-gray-50 rounded-2xl p-4">
+            <p className="text-gray-500 text-sm">Interest saved</p>
+            <h3 className="font-semibold text-green-600">{formatRM(forecast.interestSaved)}</h3>
+          </div>
+        </div>
+
+        <div className="bg-gray-50 rounded-[1.7rem] p-4 mb-5">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold">Timeline</h3>
+            <p className="text-gray-400 text-xs">Projected</p>
+          </div>
+
+          <div className="space-y-3">
+            {forecast.timeline.map((item) => (
+              <div key={item.key} className="flex items-center gap-3">
+                <div className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-medium text-sm">{item.label}</p>
+                  <p className="text-gray-500 text-xs">
+                    {item.month === 0 ? "Now" : `${item.month} months`} · {formatFullDueDate(item.date)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-[1.7rem] p-4 shadow-sm">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-semibold">Projected Balance</h3>
+            <p className="text-gray-400 text-xs">Outstanding</p>
+          </div>
+
+          <div className="h-44">
+            {forecast.chartData.length > 1 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={forecast.chartData}>
+                  <Tooltip formatter={(value) => formatRM(value)} />
+                  <Line type="monotone" dataKey="balance" stroke="#2563eb" strokeWidth={3} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+                Add interest and payment details to show projection.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PaymentModal({ loan, onClose, onSave }) {
   const [amount, setAmount] = useState("");
   const [paymentType, setPaymentType] = useState("monthly");
@@ -950,6 +1246,9 @@ function SettingsModal({
   cloudSyncMessage,
   isCloudSyncing,
   isCloudRestoring,
+  autoSyncEnabled,
+  lastSyncedAt,
+  onToggleAutoSync,
   onSignInWithGoogle,
   onSignOut,
   onSyncNow,
@@ -1009,9 +1308,31 @@ function SettingsModal({
             <div>
               <p className="font-semibold">Cloud Sync</p>
               <p className="text-gray-500 text-sm">{cloudSyncStatus}</p>
+              <p className="text-gray-400 text-xs mt-1">
+                {lastSyncedAt ? `Last synced ${lastSyncedAt}` : "Not synced yet"}
+              </p>
             </div>
 
             <div className={`w-3 h-3 rounded-full ${cloudUser ? "bg-blue-500" : "bg-gray-300"}`} />
+          </div>
+
+          <div className="bg-white rounded-2xl p-3 mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-sm">Auto Sync</p>
+              <p className="text-gray-500 text-xs">{autoSyncEnabled ? "On" : "Off"}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onToggleAutoSync(!autoSyncEnabled)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold active:scale-[0.98] transition ${
+                autoSyncEnabled
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-800"
+              }`}
+            >
+              {autoSyncEnabled ? "On" : "Off"}
+            </button>
           </div>
 
           {cloudUser && (
@@ -1424,11 +1745,14 @@ function LoanFormModal({ loan, onClose, onSave }) {
 export default function App() {
   const skipNextLoanPersist = useRef(false);
   const skipNextSettingsPersist = useRef(false);
+  const autoSyncTimer = useRef(null);
+  const skipNextAutoSync = useRef(false);
   const [loans, setLoans] = useState(loadLoans);
   const [selectedLoanId, setSelectedLoanId] = useState(null);
   const [showAddLoan, setShowAddLoan] = useState(false);
   const [editingLoan, setEditingLoan] = useState(null);
   const [calculatorLoan, setCalculatorLoan] = useState(null);
+  const [forecastLoan, setForecastLoan] = useState(null);
   const [paymentLoan, setPaymentLoan] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(loadReminderEnabled);
@@ -1440,6 +1764,7 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [isCloudRestoring, setIsCloudRestoring] = useState(false);
   const [cloudSyncMessage, setCloudSyncMessage] = useState(null);
+  const [cloudSyncState, setCloudSyncState] = useState("local");
   const selectedLoan = loans.find((loan) => loan.id === selectedLoanId);
   const selectedLoanDueStatus = selectedLoan ? getLoanDueStatus(selectedLoan) : null;
   const totalOutstanding = loans.reduce((total, loan) => total + loan.amount, 0);
@@ -1460,6 +1785,7 @@ export default function App() {
   const dueStatuses = loans.map((loan) => ({ loanId: loan.id, ...getLoanDueStatus(loan) }));
   const overdueCount = dueStatuses.filter((status) => status.isOverdue).length;
   const dueSoonCount = dueStatuses.filter((status) => status.isDueSoon).length;
+  const dashboardInsights = loans.flatMap((loan) => buildLoanInsights(loan, loans)).slice(0, 3);
   const dueSoonTitle = dueSoonCount === 1 ? "Payment due soon" : "Payments due soon";
   const dueSoonSummary = dueSoonCount === 1
     ? "1 upcoming payment"
@@ -1472,7 +1798,22 @@ export default function App() {
   const hiddenLong = `RM ${"\u2022".repeat(7)}`;
   const hiddenShort = `RM ${"\u2022".repeat(4)}`;
   const hiddenTiny = `RM ${"\u2022".repeat(3)}`;
-  const cloudSyncStatus = cloudUser ? "Synced" : "Local only";
+  const autoSyncEnabled = Boolean(settings.autoSyncEnabled);
+  const lastSyncedAt = settings.lastSyncedAt
+    ? new Date(settings.lastSyncedAt).toLocaleString("en-MY", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    : "";
+  const cloudSyncStatus = !cloudUser
+    ? "Local only"
+    : cloudSyncState === "syncing"
+      ? "Syncing..."
+      : cloudSyncState === "error"
+        ? "Sync error"
+        : "Synced";
 
   const handleSaveLoan = (loan) => {
     setLoans((currentLoans) => [normalizeLoan(loan), ...currentLoans]);
@@ -1645,45 +1986,96 @@ export default function App() {
     }
   };
 
-  const handleSyncNow = async () => {
+  const uploadCloudData = async ({ silent = false, settingsOverride } = {}) => {
     if (!cloudUser) {
-      setCloudSyncMessage({ type: "error", text: "Sign in before syncing." });
-      return;
+      throw new Error("Sign in before syncing.");
     }
 
     const loansCollection = getUserLoansCollection(cloudUser.uid);
     const settingsDoc = getUserSettingsDoc(cloudUser.uid);
 
     if (!loansCollection || !settingsDoc) {
-      setCloudSyncMessage({ type: "error", text: "Firebase is not configured yet." });
-      return;
+      throw new Error("Firebase is not configured yet.");
     }
 
+    const syncedAt = new Date().toISOString();
+    const nextSettings = {
+      ...settings,
+      ...settingsOverride,
+      autoSyncEnabled: settingsOverride?.autoSyncEnabled ?? autoSyncEnabled,
+      lastSyncedAt: syncedAt,
+    };
+
     setIsCloudSyncing(true);
-    setCloudSyncMessage(null);
+    setCloudSyncState("syncing");
 
-    try {
-      const existingLoans = await getDocs(loansCollection);
+    if (!silent) {
+      setCloudSyncMessage(null);
+    }
 
-      await Promise.all(existingLoans.docs.map((loanDoc) => deleteDoc(loanDoc.ref)));
-      await Promise.all(loans.map((loan) => (
-        setDoc(doc(loansCollection, loan.id), {
-          ...loan,
-          syncedAt: serverTimestamp(),
-        })
-      )));
-      await setDoc(settingsDoc, {
-        ...settings,
-        reminderEnabled,
+    const existingLoans = await getDocs(loansCollection);
+
+    await Promise.all(existingLoans.docs.map((loanDoc) => deleteDoc(loanDoc.ref)));
+    await Promise.all(loans.map((loan) => (
+      setDoc(doc(loansCollection, loan.id), {
+        ...loan,
         syncedAt: serverTimestamp(),
-      });
+      })
+    )));
+    await setDoc(settingsDoc, {
+      ...nextSettings,
+      reminderEnabled,
+      syncedAt: serverTimestamp(),
+    });
 
+    skipNextAutoSync.current = true;
+    setSettings(nextSettings);
+    setCloudSyncState("synced");
+
+    if (!silent) {
       setCloudSyncMessage({
         type: "success",
         text: `Synced ${loans.length} ${loans.length === 1 ? "loan" : "loans"} to Firebase.`,
       });
+    }
+  };
+
+  const handleSyncNow = async () => {
+    try {
+      await uploadCloudData();
     } catch {
       setCloudSyncMessage({ type: "error", text: "Sync failed. Please try again." });
+      setCloudSyncState("error");
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const handleToggleAutoSync = async (enabled) => {
+    const nextSettings = {
+      ...settings,
+      autoSyncEnabled: enabled,
+    };
+
+    skipNextAutoSync.current = true;
+    setSettings(nextSettings);
+    setCloudSyncMessage(null);
+
+    if (!enabled) {
+      return;
+    }
+
+    if (!cloudUser) {
+      setCloudSyncState("local");
+      setCloudSyncMessage({ type: "error", text: "Sign in to use Auto Sync." });
+      return;
+    }
+
+    try {
+      await uploadCloudData({ settingsOverride: nextSettings });
+    } catch {
+      setCloudSyncMessage({ type: "error", text: "Auto Sync could not start." });
+      setCloudSyncState("error");
     } finally {
       setIsCloudSyncing(false);
     }
@@ -1731,6 +2123,7 @@ export default function App() {
       delete nextSettings.reminderEnabled;
       delete nextSettings.syncedAt;
 
+      skipNextAutoSync.current = true;
       setLoans(restoredLoans);
       setSettings(nextSettings);
       setReminderEnabled(nextReminderEnabled);
@@ -2078,11 +2471,48 @@ export default function App() {
       setCloudUser(user);
 
       if (user) {
+        setCloudSyncState("synced");
         getUserLoansCollection(user.uid);
         getUserSettingsDoc(user.uid);
+      } else {
+        setCloudSyncState("local");
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (autoSyncTimer.current) {
+      clearTimeout(autoSyncTimer.current);
+      autoSyncTimer.current = null;
+    }
+
+    if (skipNextAutoSync.current) {
+      skipNextAutoSync.current = false;
+      return undefined;
+    }
+
+    if (!autoSyncEnabled || !cloudUser || isCloudRestoring) {
+      return undefined;
+    }
+
+    autoSyncTimer.current = setTimeout(async () => {
+      try {
+        await uploadCloudData({ silent: true });
+      } catch {
+        setCloudSyncState("error");
+        setCloudSyncMessage({ type: "error", text: "Auto Sync failed." });
+      } finally {
+        setIsCloudSyncing(false);
+      }
+    }, 1500);
+
+    return () => {
+      if (autoSyncTimer.current) {
+        clearTimeout(autoSyncTimer.current);
+        autoSyncTimer.current = null;
+      }
+    };
+  }, [loans, settings, cloudUser, autoSyncEnabled, isCloudRestoring]);
 
   useEffect(() => {
     if (!reminderEnabled || !("Notification" in window) || Notification.permission !== "granted") {
@@ -2205,6 +2635,8 @@ export default function App() {
         </div>
 
         <SmartAnalytics loans={loans} />
+
+        <SmartInsights insights={dashboardInsights} />
 
         <div className="flex justify-between items-center mb-3">
           <h2 className="font-semibold text-lg">Your Loans</h2>
@@ -2366,6 +2798,8 @@ export default function App() {
               <h3 className="font-semibold text-blue-600">{formatRM(selectedLoan.installmentCredit || 0)}</h3>
             </div>
 
+            <SmartInsights insights={buildLoanInsights(selectedLoan, loans)} />
+
             {selectedLoan.repaymentType === "flexi" && (
               <button
                 onClick={() => setCalculatorLoan(selectedLoan)}
@@ -2381,6 +2815,14 @@ export default function App() {
             >
               <Plus size={18} />
               Add Payment
+            </button>
+
+            <button
+              onClick={() => setForecastLoan(selectedLoan)}
+              className="w-full bg-gray-100 text-gray-800 rounded-2xl py-4 font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition mb-5"
+            >
+              <TrendingUp size={18} />
+              Forecast Timeline
             </button>
 
             <div className="h-40 mb-5">
@@ -2497,6 +2939,10 @@ export default function App() {
         <ExtraPaymentModal loan={calculatorLoan} onClose={() => setCalculatorLoan(null)} />
       )}
 
+      {forecastLoan && (
+        <ForecastTimelineModal loan={forecastLoan} onClose={() => setForecastLoan(null)} />
+      )}
+
       {paymentLoan && (
         <PaymentModal loan={paymentLoan} onClose={() => setPaymentLoan(null)} onSave={handleSavePayment} />
       )}
@@ -2515,6 +2961,9 @@ export default function App() {
           cloudSyncMessage={cloudSyncMessage}
           isCloudSyncing={isCloudSyncing}
           isCloudRestoring={isCloudRestoring}
+          autoSyncEnabled={autoSyncEnabled}
+          lastSyncedAt={lastSyncedAt}
+          onToggleAutoSync={handleToggleAutoSync}
           onSignInWithGoogle={handleSignInWithGoogle}
           onSignOut={handleSignOut}
           onSyncNow={handleSyncNow}
